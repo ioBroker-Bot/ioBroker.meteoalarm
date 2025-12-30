@@ -2,10 +2,7 @@
   "name": "iobroker.meteoalarm",
   "version": "4.0.1",
   "description": "Meteolaram",
-  "author": {
-    "name": "jack_blackson",
-    "email": "blacksonj7@gmail.com"
-  },
+  "author": "jack_blackson <blacksonj7@gmail.com>",
   "contributors": [
     "iobroker-community-adapters <iobroker-community-adapters@gmx.de>",
     "mcm1957 <iobroker-community-adapters@gmx.de>"
