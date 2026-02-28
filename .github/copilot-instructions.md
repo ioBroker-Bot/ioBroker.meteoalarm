@@ -1,9 +1,37 @@
 # ioBroker Adapter Development with GitHub Copilot
 
-**Version:** 0.4.0
+**Version:** 0.5.7
 **Template Source:** https://github.com/DrozmotiX/ioBroker-Copilot-Instructions
 
 This file contains instructions and best practices for GitHub Copilot when working on ioBroker adapter development.
+
+---
+
+## 📑 Table of Contents
+
+1. [Project Context](#project-context)
+2. [Code Quality & Standards](#code-quality--standards)
+   - [Code Style Guidelines](#code-style-guidelines)
+   - [ESLint Configuration](#eslint-configuration)
+3. [Testing](#testing)
+   - [Unit Testing](#unit-testing)
+   - [Integration Testing](#integration-testing)
+   - [API Testing with Credentials](#api-testing-with-credentials)
+4. [Development Best Practices](#development-best-practices)
+   - [Dependency Management](#dependency-management)
+   - [HTTP Client Libraries](#http-client-libraries)
+   - [Error Handling](#error-handling)
+5. [Admin UI Configuration](#admin-ui-configuration)
+   - [JSON-Config Setup](#json-config-setup)
+   - [Translation Management](#translation-management)
+6. [Documentation](#documentation)
+   - [README Updates](#readme-updates)
+   - [Changelog Management](#changelog-management)
+7. [CI/CD & GitHub Actions](#cicd--github-actions)
+   - [Workflow Configuration](#workflow-configuration)
+   - [Testing Integration](#testing-integration)
+
+---
 
 ## Project Context
 
@@ -16,7 +44,7 @@ This is the **meteoalarm** adapter for ioBroker, which provides weather alarm da
 - Connects to various European meteorological services to fetch weather alerts and warnings
 - Processes XML/JSON feeds containing weather alarm data (wind, rain, snow, temperature, etc.)
 - Creates ioBroker states for different alarm levels (1-4) with icons, descriptions, and timing
-- Supports geographic filtering using coordinates or region codes  
+- Supports geographic filtering using coordinates or region codes
 - Provides HTML formatted outputs for visualization in dashboards
 - Uses external APIs and may require geographic coordinate validation
 - Implements Sentry error reporting for production monitoring
@@ -29,47 +57,122 @@ Key technical aspects:
 - Integrates with `@iobroker/adapter-core` framework
 - Supports both scheduled execution and on-demand data retrieval
 
+---
+
+## Code Quality & Standards
+
+### Code Style Guidelines
+
+- Follow JavaScript/TypeScript best practices
+- Use async/await for asynchronous operations
+- Implement proper resource cleanup in `unload()` method
+- Use semantic versioning for adapter releases
+- Include proper JSDoc comments for public methods
+
+**Timer and Resource Cleanup Example:**
+```javascript
+private connectionTimer?: NodeJS.Timeout;
+
+async onReady() {
+  this.connectionTimer = setInterval(() => this.checkConnection(), 30000);
+}
+
+onUnload(callback) {
+  try {
+    if (this.connectionTimer) {
+      clearInterval(this.connectionTimer);
+      this.connectionTimer = undefined;
+    }
+    callback();
+  } catch (e) {
+    callback();
+  }
+}
+```
+
+### ESLint Configuration
+
+**CRITICAL:** ESLint validation must run FIRST in your CI/CD pipeline, before any other tests. This "lint-first" approach catches code quality issues early.
+
+#### Setup
+```bash
+npm install --save-dev eslint @iobroker/eslint-config
+```
+
+#### Configuration (.eslintrc.json)
+```json
+{
+  "extends": "@iobroker/eslint-config",
+  "rules": {
+    // Add project-specific rule overrides here if needed
+  }
+}
+```
+
+#### Package.json Scripts
+```json
+{
+  "scripts": {
+    "lint": "eslint --max-warnings 0 .",
+    "lint:fix": "eslint . --fix"
+  }
+}
+```
+
+#### Best Practices
+1. ✅ Run ESLint before committing — fix ALL warnings, not just errors
+2. ✅ Use `lint:fix` for auto-fixable issues
+3. ✅ Don't disable rules without documentation
+4. ✅ Lint all relevant files (main code, tests, build scripts)
+5. ✅ Keep `@iobroker/eslint-config` up to date
+6. ✅ **ESLint warnings are treated as errors in CI** (`--max-warnings 0`). The `lint` script above already includes this flag — run `npm run lint` to match CI behavior locally
+
+#### Common Issues
+- **Unused variables**: Remove or prefix with underscore (`_variable`)
+- **Missing semicolons**: Run `npm run lint:fix`
+- **Indentation**: Use 4 spaces (ioBroker standard)
+- **console.log**: Replace with `adapter.log.debug()` or remove
+
+---
+
 ## Testing
 
 ### Unit Testing
-- Use Jest as the primary testing framework for ioBroker adapters
+
+- Use Jest as the primary testing framework
 - Create tests for all adapter main functions and helper methods
 - Test error handling scenarios and edge cases
 - Mock external API calls and hardware dependencies
-- For adapters connecting to APIs/devices not reachable by internet, provide example data files to allow testing of functionality without live connections
-- Example test structure:
-  ```javascript
-  describe('AdapterName', () => {
-    let adapter;
-    
-    beforeEach(() => {
-      // Setup test adapter instance
-    });
-    
-    test('should initialize correctly', () => {
-      // Test adapter initialization
-    });
+- For adapters connecting to APIs/devices not reachable by internet, provide example data files
+
+**Example Structure:**
+```javascript
+describe('AdapterName', () => {
+  let adapter;
+  
+  beforeEach(() => {
+    // Setup test adapter instance
   });
-  ```
+  
+  test('should initialize correctly', () => {
+    // Test adapter initialization
+  });
+});
+```
 
 ### Integration Testing
 
-**IMPORTANT**: Use the official `@iobroker/testing` framework for all integration tests. This is the ONLY correct way to test ioBroker adapters.
+**CRITICAL:** Use the official `@iobroker/testing` framework. This is the ONLY correct way to test ioBroker adapters.
 
-**Official Documentation**: https://github.com/ioBroker/testing
+**Official Documentation:** https://github.com/ioBroker/testing
 
 #### Framework Structure
-Integration tests MUST follow this exact pattern:
 
+**✅ Correct Pattern:**
 ```javascript
 const path = require('path');
 const { tests } = require('@iobroker/testing');
 
-// Define test coordinates or configuration
-const TEST_COORDINATES = '52.520008,13.404954'; // Berlin
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-// Use tests.integration() with defineAdditionalTests
 tests.integration(path.join(__dirname, '..'), {
     defineAdditionalTests({ suite }) {
         suite('Test adapter with specific configuration', (getHarness) => {
@@ -82,140 +185,56 @@ tests.integration(path.join(__dirname, '..'), {
             it('should configure and start adapter', function () {
                 return new Promise(async (resolve, reject) => {
                     try {
-                        harness = getHarness();
-                        
-                        // Get adapter object using promisified pattern
+                        // Get adapter object
                         const obj = await new Promise((res, rej) => {
-                            harness.objects.getObject('system.adapter.your-adapter.0', (err, o) => {
+                            harness.objects.getObject('system.adapter.meteoalarm.0', (err, o) => {
                                 if (err) return rej(err);
                                 res(o);
                             });
                         });
-                        
-                        if (!obj) {
-                            return reject(new Error('Adapter object not found'));
-                        }
 
-                        // Configure adapter properties
+                        if (!obj) return reject(new Error('Adapter object not found'));
+
+                        // Configure adapter
                         Object.assign(obj.native, {
-                            position: TEST_COORDINATES,
-                            createCurrently: true,
-                            createHourly: true,
-                            createDaily: true,
-                            // Add other configuration as needed
+                            geocodeLocation: 'Paris, France',
+                            geocode: '48.8566,2.3522',
+                            country: 'FR',
+                            provider: 1,
+                            imageSize: 50,
+                            noBackgroundColor: false,
+                            noIcons: false
                         });
 
-                        // Set the updated configuration
                         harness.objects.setObject(obj._id, obj);
 
-                        console.log('✅ Step 1: Configuration written, starting adapter...');
-                        
-                        // Start adapter and wait
+                        // Start and wait
                         await harness.startAdapterAndWait();
-                        
-                        console.log('✅ Step 2: Adapter started');
+                        await new Promise(resolve => setTimeout(resolve, 15000));
 
-                        // Wait for adapter to process data
-                        const waitMs = 15000;
-                        await wait(waitMs);
+                        // Verify states
+                        const stateIds = await harness.dbConnection.getStateIDs('meteoalarm.0.*');
 
-                        console.log('🔍 Step 3: Checking states after adapter run...');
-                        
-                        // Check if states were created
-                        const states = await harness.states.getKeysAsync('your-adapter.0.*');
-                        console.log(`Found ${states.length} states`);
-                        
-                        // Verify specific expected states exist
-                        expect(states.length).to.be.greaterThan(0);
-                        
-                        resolve();
+                        if (stateIds.length > 0) {
+                            console.log('✅ Adapter successfully created states');
+                            await harness.stopAdapter();
+                            resolve(true);
+                        } else {
+                            reject(new Error('Adapter did not create any states'));
+                        }
                     } catch (error) {
-                        console.error('❌ Test failed:', error.message);
                         reject(error);
                     }
                 });
-            });
+            }).timeout(40000);
         });
     }
 });
 ```
 
-#### Test Configuration Patterns
+#### Testing Success AND Failure Scenarios
 
-**Pattern 1: Basic Object Configuration**
-```javascript
-// Configure adapter settings through the adapter object
-const obj = await harness.objects.getObjectAsync('system.adapter.your-adapter.0');
-Object.assign(obj.native, {
-    setting1: 'value1',
-    setting2: true,
-    coordinates: '52.520008,13.404954'
-});
-await harness.objects.setObjectAsync(obj._id, obj);
-```
-
-**Pattern 2: Direct Configuration Method**
-```javascript
-// Use the harness helper method for configuration
-await harness.changeAdapterConfig('your-adapter', {
-    native: {
-        apiKey: 'test-key',
-        interval: 300000,
-        regions: ['DE', 'AT']
-    }
-});
-```
-
-#### State Validation Examples
-```javascript
-// Check if adapter created expected states
-const connectionState = await harness.states.getStateAsync('your-adapter.0.info.connection');
-expect(connectionState).to.not.be.null;
-expect(connectionState.val).to.be.true;
-
-// Validate data states exist and have expected structure
-const dataKeys = await harness.states.getKeysAsync('your-adapter.0.alarms.*');
-expect(dataKeys.length).to.be.greaterThan(0);
-
-// Check state values
-const levelState = await harness.states.getStateAsync('your-adapter.0.level');
-expect(levelState.val).to.be.a('number');
-expect(levelState.val).to.be.at.least(1).and.at.most(4);
-```
-
-#### Async Test Patterns
-**Always** use proper timeout management for external API calls:
-```javascript
-it('should handle API calls within timeout', function () {
-    // Set appropriate timeout for API operations
-    this.timeout(120000); // 2 minutes for external APIs
-    
-    return new Promise(async (resolve, reject) => {
-        try {
-            // Test implementation
-            resolve();
-        } catch (error) {
-            reject(error);
-        }
-    });
-});
-```
-
-#### Mock External Dependencies
-```javascript
-// Mock external API calls in unit tests
-const mockApiResponse = {
-    alerts: [
-        { level: 2, type: 'wind', description: 'Strong winds expected' }
-    ]
-};
-
-// Use nock or similar for HTTP mocking
-const nock = require('nock');
-nock('https://api.example.com')
-    .get('/weather/alerts')
-    .reply(200, mockApiResponse);
-```
+**IMPORTANT:** For every "it works" test, implement corresponding "it fails gracefully" tests.
 
 **[CUSTOMIZE: Meteoalarm-Specific Testing Requirements]**
 
@@ -224,17 +243,6 @@ For the meteoalarm adapter, additional testing considerations:
 ```javascript
 // Test geographic coordinate processing
 const TEST_COORDINATES = '48.8566,2.3522'; // Paris coordinates
-
-// Test configuration for European region
-Object.assign(obj.native, {
-    geocodeLocation: 'Paris, France',  
-    geocode: TEST_COORDINATES,
-    country: 'FR',
-    provider: 1, // Meteoalarm provider
-    imageSize: 50,
-    noBackgroundColor: false,
-    noIcons: false
-});
 
 // Validate weather alarm states
 const alarmKeys = await harness.states.getKeysAsync('meteoalarm.0.alarms.*');
@@ -246,182 +254,314 @@ if (htmlState && htmlState.val) {
     expect(htmlState.val).to.include('<table');
     expect(htmlState.val).to.include('</table>');
 }
-```
 
-## Adapter Development Best Practices
-
-### Core Adapter Structure
-Follow the standard ioBroker adapter pattern:
-
-```javascript
-const utils = require('@iobroker/adapter-core');
-const adapter = new utils.Adapter('adapter-name');
-
-// Essential event handlers
-adapter.on('ready', () => {
-    // Adapter startup logic
-});
-
-adapter.on('unload', (callback) => {
-    // Cleanup resources, close connections
-    callback();
-});
-
-// Optional: Handle object/state changes
-adapter.on('stateChange', (id, state) => {
-    // React to state changes
-});
-```
-
-### Resource Management
-Proper cleanup in the unload handler is crucial:
-
-```javascript
-adapter.on('unload', (callback) => {
-  try {
-    // Clear intervals and timeouts
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = undefined;
-    }
-    if (this.connectionTimer) {
-      clearTimeout(this.connectionTimer);
-      this.connectionTimer = undefined;
-    }
-    // Close connections, clean up resources
-    callback();
-  } catch (e) {
-    callback();
-  }
+// Check alarm level is within expected range
+if (levelState && levelState.val !== null) {
+    expect(levelState.val).to.be.a('number');
+    expect(levelState.val).to.be.at.least(1).and.at.most(4);
 }
 ```
 
-## Code Style and Standards
+#### Key Rules
 
-- Follow JavaScript/TypeScript best practices
-- Use async/await for asynchronous operations
-- Implement proper resource cleanup in `unload()` method
-- Use semantic versioning for adapter releases
-- Include proper JSDoc comments for public methods
+1. ✅ Use `@iobroker/testing` framework
+2. ✅ Configure via `harness.objects.setObject()`
+3. ✅ Start via `harness.startAdapterAndWait()`
+4. ✅ Verify states via `harness.states.getState()`
+5. ✅ Allow proper timeouts for async operations
+6. ❌ NEVER test API URLs directly
+7. ❌ NEVER bypass the harness system
 
-## CI/CD and Testing Integration
+#### Workflow Dependencies
 
-### GitHub Actions for API Testing
-For adapters with external API dependencies, implement separate CI/CD jobs:
+Integration tests should run ONLY after lint and adapter tests pass:
 
 ```yaml
-# Tests API connectivity with demo credentials (runs separately)
-demo-api-tests:
-  if: contains(github.event.head_commit.message, '[skip ci]') == false
-  
+integration-tests:
+  needs: [check-and-lint, adapter-tests]
   runs-on: ubuntu-22.04
-  
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Use Node.js 20.x
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20.x
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Run demo API tests
-      run: npm run test:integration-demo
 ```
 
-### CI/CD Best Practices
-- Run credential tests separately from main test suite
-- Use ubuntu-22.04 for consistency
-- Don't make credential tests required for deployment
-- Provide clear failure messages for API connectivity issues
-- Use appropriate timeouts for external API calls (120+ seconds)
+### API Testing with Credentials
 
-### Package.json Script Integration
-Add dedicated script for credential testing:
-```json
-{
-  "scripts": {
-    "test:integration-demo": "mocha test/integration-demo --exit"
-  }
-}
-```
+For adapters connecting to external APIs requiring authentication:
 
-### Practical Example: Complete API Testing Implementation
-Here's a complete example based on lessons learned from the Discovergy adapter:
+#### Password Encryption for Integration Tests
 
-#### test/integration-demo.js
 ```javascript
-const path = require("path");
-const { tests } = require("@iobroker/testing");
-
-// Helper function to encrypt password using ioBroker's encryption method
 async function encryptPassword(harness, password) {
     const systemConfig = await harness.objects.getObjectAsync("system.config");
-    
-    if (!systemConfig || !systemConfig.native || !systemConfig.native.secret) {
+    if (!systemConfig?.native?.secret) {
         throw new Error("Could not retrieve system secret for password encryption");
     }
-    
+
     const secret = systemConfig.native.secret;
     let result = '';
     for (let i = 0; i < password.length; ++i) {
         result += String.fromCharCode(secret[i % secret.length].charCodeAt(0) ^ password.charCodeAt(i));
     }
-    
     return result;
 }
-
-// Run integration tests with demo credentials
-tests.integration(path.join(__dirname, ".."), {
-    defineAdditionalTests({ suite }) {
-        suite("API Testing with Demo Credentials", (getHarness) => {
-            let harness;
-            
-            before(() => {
-                harness = getHarness();
-            });
-
-            it("Should connect to API and initialize with demo credentials", async () => {
-                console.log("Setting up demo credentials...");
-                
-                if (harness.isAdapterRunning()) {
-                    await harness.stopAdapter();
-                }
-                
-                const encryptedPassword = await encryptPassword(harness, "demo_password");
-                
-                await harness.changeAdapterConfig("your-adapter", {
-                    native: {
-                        username: "demo@provider.com",
-                        password: encryptedPassword,
-                        // other config options
-                    }
-                });
-
-                console.log("Starting adapter with demo credentials...");
-                await harness.startAdapter();
-                
-                // Wait for API calls and initialization
-                await new Promise(resolve => setTimeout(resolve, 60000));
-                
-                const connectionState = await harness.states.getStateAsync("your-adapter.0.info.connection");
-                
-                if (connectionState && connectionState.val === true) {
-                    console.log("✅ SUCCESS: API connection established");
-                    return true;
-                } else {
-                    throw new Error("API Test Failed: Expected API connection to be established with demo credentials. " +
-                        "Check logs above for specific API errors (DNS resolution, 401 Unauthorized, network issues, etc.)");
-                }
-            }).timeout(120000);
-        });
-    }
-});
 ```
+
+---
+
+## Development Best Practices
+
+### Dependency Management
+
+- Always use `npm` for dependency management
+- Use `npm ci` for installing existing dependencies (respects package-lock.json)
+- Use `npm install` only when adding or updating dependencies
+- Keep dependencies minimal and focused
+- Only update dependencies in separate Pull Requests
+
+**When modifying package.json:**
+1. Run `npm install` to sync package-lock.json
+2. Commit both package.json and package-lock.json together
+
+**Best Practices:**
+- Prefer built-in Node.js modules when possible
+- Use `@iobroker/adapter-core` for adapter base functionality
+- Avoid deprecated packages
+- Document specific version requirements
+
+### HTTP Client Libraries
+
+- **Preferred:** Use native `fetch` API (Node.js 20+ required)
+- **Avoid:** `axios` unless specific features are required
+
+**Example with fetch:**
+```javascript
+try {
+  const response = await fetch('https://api.example.com/data');
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const data = await response.json();
+} catch (error) {
+  this.log.error(`API request failed: ${error.message}`);
+}
+```
+
+**Other Recommendations:**
+- **Logging:** Use adapter built-in logging (`this.log.*`)
+- **Scheduling:** Use adapter built-in timers and intervals
+- **File operations:** Use Node.js `fs/promises`
+- **Configuration:** Use adapter config system
+
+### Error Handling
+
+- Always catch and log errors appropriately
+- Use adapter log levels (error, warn, info, debug)
+- Provide meaningful, user-friendly error messages
+- Handle network failures gracefully
+- Implement retry mechanisms where appropriate
+- Always clean up timers, intervals, and resources in `unload()` method
+
+**Example:**
+```javascript
+try {
+  await this.connectToDevice();
+} catch (error) {
+  this.log.error(`Failed to connect to device: ${error.message}`);
+  this.setState('info.connection', false, true);
+  // Implement retry logic if needed
+}
+```
+
+---
+
+## Admin UI Configuration
+
+### JSON-Config Setup
+
+Use JSON-Config format for modern ioBroker admin interfaces.
+
+**Example Structure:**
+```json
+{
+  "type": "panel",
+  "items": {
+    "host": {
+      "type": "text",
+      "label": "Host address",
+      "help": "IP address or hostname of the device"
+    }
+  }
+}
+```
+
+**Guidelines:**
+- ✅ Use consistent naming conventions
+- ✅ Provide sensible default values
+- ✅ Include validation for required fields
+- ✅ Add tooltips for complex options
+- ✅ Ensure translations for all supported languages (minimum English and German)
+- ✅ Write end-user friendly labels, avoid technical jargon
+
+### Translation Management
+
+**CRITICAL:** Translation files must stay synchronized with `admin/jsonConfig.json`. Orphaned keys or missing translations cause UI issues and PR review delays.
+
+#### Overview
+- **Location:** `admin/i18n/{lang}/translations.json` for 11 languages (de, en, es, fr, it, nl, pl, pt, ru, uk, zh-cn)
+- **Source of truth:** `admin/jsonConfig.json` - all `label` and `help` properties must have translations
+- **Command:** `npm run translate` - auto-generates translations but does NOT remove orphaned keys
+- **Formatting:** English uses tabs, other languages use 4 spaces
+
+#### Critical Rules
+1. ✅ Keys must match exactly with jsonConfig.json
+2. ✅ No orphaned keys in translation files
+3. ✅ All translations must be in native language (no English fallbacks)
+4. ✅ Keys must be sorted alphabetically
+
+#### Translation Checklist
+
+Before committing changes to admin UI or translations:
+1. ✅ All translations in native language
+2. ✅ Keys alphabetically sorted
+3. ✅ `npm run lint` passes
+4. ✅ `npm run test` passes
+5. ✅ Admin UI displays correctly
+
+---
+
+## Documentation
+
+### README Updates
+
+#### Required Sections
+1. **Installation** - Clear npm/ioBroker admin installation steps
+2. **Configuration** - Detailed configuration options with examples
+3. **Usage** - Practical examples and use cases
+4. **Changelog** - Version history (use "## **WORK IN PROGRESS**" for ongoing changes)
+5. **License** - License information (typically MIT for ioBroker adapters)
+6. **Support** - Links to issues, discussions, community support
+
+#### Mandatory README Updates for PRs
+
+For **every PR or new feature**, always add a user-friendly entry to README.md:
+
+- Add entries under `## **WORK IN PROGRESS**` section
+- Use format: `* (author) **TYPE**: Description of user-visible change`
+- Types: **NEW** (features), **FIXED** (bugs), **ENHANCED** (improvements), **TESTING** (test additions), **CI/CD** (automation)
+
+**Example:**
+```markdown
+## **WORK IN PROGRESS**
+
+* (DutchmanNL) **FIXED**: Adapter now properly validates login credentials (fixes #25)
+* (DutchmanNL) **NEW**: Added device discovery to simplify initial setup
+```
+
+### Changelog Management
+
+Follow the [AlCalzone release-script](https://github.com/AlCalzone/release-script) standard.
+
+#### Format Requirements
+
+```markdown
+# Changelog
+
+<!--
+  Placeholder for the next version (at the beginning of the line):
+  ## **WORK IN PROGRESS**
+-->
+
+## **WORK IN PROGRESS**
+
+- (author) **NEW**: Added new feature X
+- (author) **FIXED**: Fixed bug Y (fixes #25)
+
+## v0.1.0 (2023-01-01)
+Initial release
+```
+
+#### Workflow Process
+- **During Development:** All changes go under `## **WORK IN PROGRESS**`
+- **For Every PR:** Add user-facing changes to WORK IN PROGRESS section
+- **Before Merge:** Version number and date added when merging to main
+- **Release Process:** Release-script automatically converts placeholder to actual version
+
+---
+
+## CI/CD & GitHub Actions
+
+### Workflow Configuration
+
+#### GitHub Actions Best Practices
+
+**Must use ioBroker official testing actions:**
+- `ioBroker/testing-action-check@v1` for lint and package validation
+- `ioBroker/testing-action-adapter@v1` for adapter tests
+- `ioBroker/testing-action-deploy@v1` for automated releases with Trusted Publishing (OIDC)
+
+**Configuration:**
+- **Node.js versions:** Test on 20.x, 22.x, 24.x
+- **Platform:** Use ubuntu-22.04
+- **Automated releases:** Deploy to npm on version tags (requires NPM Trusted Publishing)
+- **Monitoring:** Include Sentry release tracking for error monitoring
+
+#### Critical: Lint-First Validation Workflow
+
+**ALWAYS run ESLint checks BEFORE other tests.** Benefits:
+- Catches code quality issues immediately
+- Prevents wasting CI resources on tests that would fail due to linting errors
+- Provides faster feedback to developers
+- Enforces consistent code quality
+
+**Workflow Dependency Configuration:**
+```yaml
+jobs:
+  check-and-lint:
+    # Runs ESLint and package validation
+    # Uses: ioBroker/testing-action-check@v1
+
+  adapter-tests:
+    needs: [check-and-lint]  # Wait for linting to pass
+    # Run adapter unit tests
+
+  integration-tests:
+    needs: [check-and-lint, adapter-tests]  # Wait for both
+    # Run integration tests
+```
+
+### Testing Integration
+
+#### API Testing in CI/CD
+
+For adapters with external API dependencies:
+
+```yaml
+demo-api-tests:
+  if: contains(github.event.head_commit.message, '[skip ci]') == false
+  runs-on: ubuntu-22.04
+
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run demo API tests
+      run: npm run test:integration-demo
+```
+
+#### Testing Best Practices
+- Run credential tests separately from main test suite
+- Don't make credential tests required for deployment
+- Provide clear failure messages for API issues
+- Use appropriate timeouts for external calls (120+ seconds)
+
+---
 
 **[CUSTOMIZE: Meteoalarm-Specific Development Patterns]**
 
@@ -433,7 +573,7 @@ The meteoalarm adapter follows specific patterns for processing weather alarm da
 async function parseWeatherData(xmlData) {
     const parser = new xml2js.Parser();
     const result = await parser.parseStringPromise(xmlData);
-    
+
     // Extract alarm information
     const alarms = result.alerts?.alert || [];
     return alarms.map(alarm => ({
@@ -457,17 +597,17 @@ function checkIfInPoly(coordinates, polygonData) {
 // HTML output generation
 function generateAlarmHTML(alarms, config) {
     let html = '<table><tbody>';
-    
+
     for (const alarm of alarms) {
         const colorStyle = config.noBackgroundColor ? '' : `background-color: ${getAlarmColor(alarm.level)}`;
         const iconImg = config.noIcons ? '' : `<img src="${getAlarmIcon(alarm.type)}" style="height: ${config.imageSize}px;">`;
-        
+
         html += `<tr>
             <td style="${colorStyle}">${iconImg}</td>
             <td style="${colorStyle}">${alarm.description}</td>
         </tr>`;
     }
-    
+
     html += '</tbody></table>';
     return html;
 }
@@ -479,10 +619,10 @@ function generateAlarmHTML(alarms, config) {
 function validateCoordinates(coordString) {
     const match = coordString.match(/^(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
     if (!match) return false;
-    
+
     const lat = parseFloat(match[1]);
     const lon = parseFloat(match[2]);
-    
+
     return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
 }
 
