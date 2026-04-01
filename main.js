@@ -12,7 +12,7 @@
 const utils = require('@iobroker/adapter-core');
 //const request = require('request');
 const moment = require('moment');
-const util = require('util');
+const util = require('node:util');
 const turf = require('@turf/turf');
 let parseString = require('xml2js').parseString;
 //let parseStringPromise = require('xml2js').parseStringPromise;
@@ -23,12 +23,12 @@ const bent = require('bent');
 
 const parseCSV = require('csv-parse');
 //const geoCodeJSON = require('./admin/geocodes.json');
-const fs = require('fs');
-const path = require('path');
-// const { hasUncaughtExceptionCaptureCallback, features } = require('process');
-// const { count } = require('console');
+const fs = require('node:fs');
+const path = require('node:path');
+// const { hasUncaughtExceptionCaptureCallback, features } = require('node:process');
+// const { count } = require('node:console');
 // const { level } = require('./lib/stateAttr.js');
-// const { addAbortSignal } = require('stream');
+// const { addAbortSignal } = require('node:stream');
 
 // let DescFilter1 = '';
 // let DescFilter2 = '';
